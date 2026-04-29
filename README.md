@@ -1,6 +1,8 @@
 # Isotope OS
 
-Isotope is a simple operating system designed to run on minimal hardware.
+Isotope is a simple operating system designed to run directly from a floppy
+disk on an i486. The goal isn't to create a new modern experience, but learn
+about old hardware and try to make it a little usable and fun to use again.
 
 ## Building
 
