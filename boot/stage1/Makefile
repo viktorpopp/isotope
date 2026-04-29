@@ -1,3 +1,5 @@
+.DELETE_ON_ERROR:
+
 $(BUILD_DIR)/boot/stage1.bin: $(BUILD_DIR)/boot/stage1.o
 	@printf "  LD $@\n"
 	@$(LD) -m elf_i386 -T linker.ld $^ -o $@

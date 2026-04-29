@@ -19,24 +19,39 @@ bits 16
 
 %define ENDL 0x0D, 0x0A
 
+STAGE2_LOAD_SEGMENT equ 0x0000
+STAGE2_LOAD_OFFSET  equ 0x7C00
+
 
 section .bpb
+
+SECTOR_SIZE         equ 512
+RESERVED_SECTORS    equ 1
+FAT_COUNT           equ 2
+ROOT_ENTRIES        equ 0xE0
+SECTORS_PER_FAT     equ 9
+SECTORS_PER_TRACK   equ 18
+HEAD_COUNT          equ 2
+
+FAT_REGION_SIZE         equ RESERVED_SECTORS + (FAT_COPY_COUNT * SECTORS_PER_FAT)
+ROOT_DIR_LBA  equ FAT_COUNT * SECTORS_PER_FAT + RESERVED_SECTORS
+ROOT_DIR_SIZE equ (ROOT_ENTRIES * 32) / SECTOR_SIZE
 
 jmp short _start
 nop
 
 bpb:
 .oem_id:                db "ISOTOPE "               ; 8 bytes        
-.sector_size:           dw 512
+.sector_size:           dw SECTOR_SIZE
 .sectors_per_cluster:   db 1
-.reserved_sectors:      dw 1
-.fat_count:             db 2
-.root_entries:          dw 0xE0
+.reserved_sectors:      dw RESERVED_SECTORS
+.fat_count:             db FAT_COUNT
+.root_entries:          dw ROOT_ENTRIES
 .sector_count:          dw 2880                     ; 2880 * 512 = 1.44 MB
 .media_type:            db 0xF0                     ; 0xF0 = 3.5" floppy disk
-.sectors_per_fat:       dw 9
-.sectors_per_track:     dw 18
-.head_count:            dw 2
+.sectors_per_fat:       dw SECTORS_PER_FAT
+.sectors_per_track:     dw SECTORS_PER_TRACK
+.head_count:            dw HEAD_COUNT
 .hidden_sector_count:   dd 0
 .large_sector_count:    dd 0
 ebr:
@@ -79,6 +94,67 @@ _continue:
     mov si, msg_loading
     call puts
 
+    ; read the drive parameters
+    push es         ; the function may modify ES, but we still want it to be zero
+    mov ah, 0x08    ; read drive parameters
+    int 0x13        ; disk services interrupt
+    jc floppy_error
+    pop es
+
+    ; CL [0-5] - sectors per track
+    ; DH       - head count - 1
+
+    and cl, 0b00111111              ; isolate the bits we need
+    xor ch, ch                      ; the rest CX includes other things we don't care about
+    mov [bpb.sectors_per_track], cx
+
+    inc dh
+    mov [bpb.head_count], dh
+
+    ; read the root directory
+    mov cl, ROOT_DIR_SIZE           ; sectors to read
+    mov ax, ROOT_DIR_LBA            ; LBA of root directory
+    mov dl, [ebr.drive_number]
+    mov bx, buffer
+    call floppy_read
+
+    xor bx, bx                  ; current directory entry index
+    mov di, buffer              ; root directory
+
+.search_stage2:
+    mov si, stage2_pathname
+    mov cx, 11              ; which is 11 characters
+    push di                 ; (modified by cmpsb)
+    repe cmpsb              ; compare DS:SI with ES:DI CX times
+    pop di
+    je .found_stage2
+
+    add di, 32              ; next entry adress
+    inc bx                  ; next entry index
+    cmp bx, ROOT_ENTRIES
+    jl .search_stage2
+
+    jmp stage2_not_found_error
+
+.found_stage2:
+    ; DI now has the entry address
+    mov ax, [di + 26]           ; first cluster field, offset 26
+    mov [stage2_cluster], ax
+
+    ; read the FAT into memory
+    mov ax, RESERVED_SECTORS        ; it is placed right after the reserved sectors
+    mov bx, buffer
+    mov cl, [bpb.sectors_per_fat]
+    mov dl, [ebr.drive_number]
+    call floppy_read
+
+    mov bx, STAGE2_LOAD_SEGMENT
+    mov es, bx
+    mov bx, STAGE2_LOAD_OFFSET
+
+.load_stage2_loop:
+    mov ax, [stage2_cluster]
+
 halt:
     hlt
     jmp halt
@@ -108,6 +184,143 @@ puts:
     ret
 
 
+;
+; convert LBA to CHS address
+; parameters:
+;   - AX: logical block address
+; returns:
+;   - CX [bits 0-5]: sector number
+;   - CX [bits 6-15]: cylinder
+;   - DH: head
+;
+lba_to_chs:
+    push ax
+    push dx
+
+    xor dx, dx
+
+    div word [bpb.sectors_per_track]    ; AX = LBA / sectors per track
+                                        ; DX = LBA % sectors per track
+
+    inc dx                              ; DX = DX + 1 which is the sector
+    mov cx, dx                          ; now CX has the sector
+
+    xor dx, dx
+
+    div word [bpb.head_count]           ; AX = AX / head count which is cylinder
+                                        ; DX = AX % head count which is head
+
+    ; AX = cylinder
+    ; DX = head
+    ; CX = sector
+
+    mov dh, dl
+
+    ; CX =       ---CH--- ---CL---
+    ; cylinder : 76543210 98
+    ; sector   :            543210
+
+    mov ch, al
+
+    ; now set the weird 2 bits
+    ; AH before (from AX) : 0 0 0 0 0 0 9 8 <- the 9 and 8 are bits, not numbers
+    ; AH after            : 9 8 0 0 0 0 0 0
+    shl ah, 6
+
+    or cl, ah       ; now OR it with cl which already contains the sector number (from cx)
+
+    pop ax
+    mov dl, al      ; restore DL, and not DH (the head)
+    pop ax
+    ret
+
+
+;
+; read sectors from a floppy
+; parameters:
+;   - AX: logical block address
+;   - CL: sector count
+;   - DL: drive number
+;   - ES:BX: memory buffer
+;
+floppy_read:
+    pusha
+
+    push cx
+    call lba_to_chs
+    pop ax
+
+    ; AL now has the sector count and CX has sector number and cylinder
+
+    mov ah, 0x2         ; read sectors
+    mov di, 3           ; retry count
+
+.retry:
+    pusha
+    stc
+
+    int 0x13            ; disk services
+    jnc .done
+
+    ; read failed
+    popa
+    call floppy_reset
+
+    dec di
+    test di, di
+    jnz .retry
+
+.fail:
+    jmp floppy_error
+
+.done:
+    popa
+
+    popa
+    ret
+
+
+;
+; reset the floppy disk controller
+; parameters:
+;   - DL: drive number
+;
+floppy_reset:
+    pusha
+
+    mov ah, 0
+    stc
+    int 0x13
+    jc floppy_error
+
+    popa
+    ret
+
+
+stage2_not_found_error:
+    mov si, msg_stage2_not_found
+    call puts
+    jmp wait_key_and_reboot
+
+floppy_error:   
+    mov si, msg_floppy_error
+    call puts
+    jmp wait_key_and_reboot
+
+wait_key_and_reboot:
+    mov ah, 0       ; read keypress
+    int 0x16        ; keyboard services
+    jmp 0xFFFF:0    ; jump to the beginning of BIOS code
+
+
 section .rodata
 
-msg_loading: db "Hello from Isotope OS", ENDL, 0
+msg_loading: db "Loading...", ENDL, 0
+msg_floppy_error: db "Floppy error...", 0
+msg_stage2_not_found: db "Couldn't find STAGE2.BIN", 0
+stage2_pathname: db 'STAGE2  BIN'
+
+section .bss
+buffer: resb ROOT_ENTRIES * 32          ; root directory buffer (7 KiB)
+                                        ; the FAT is also only 4.5 KiB
+stage2_cluster: resw 1

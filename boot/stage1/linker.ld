@@ -24,6 +24,14 @@ SECTIONS
         *(.data)
     }
 
+    /*
+     * Place the .bss after .text in the VMA, but don't occupy any space in the LMA
+     * We don't need to define symbols because in the bootsector we dont expect anything to be null terminated
+     */
+    .bss : {
+        *(.bss)
+    }
+
     /* Tells the BIOS that we are bootable */
     .bios_footer 0x7DFE : AT(0x7DFE) {
         SHORT(0xAA55)
