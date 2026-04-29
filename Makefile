@@ -30,7 +30,12 @@ clean:
 stage1:
 	$(MAKE) -C boot/stage1
 
-$(TARGET): stage1
+.PHONY: stage2
+stage2:
+	$(MAKE) -C boot/stage2
+
+$(TARGET): stage1 stage2
 	dd if=/dev/zero of=$(TARGET) bs=512 count=2880
 	mkfs.fat -F 12 -n "ISOTOPE " $(TARGET)
+	mcopy -i $(BUILD_DIR)/floppy.img $(BUILD_DIR)/boot/stage2.bin "::stage2.bin"
 	dd if=$(BUILD_DIR)/boot/stage1.bin of=$(TARGET) conv=notrunc

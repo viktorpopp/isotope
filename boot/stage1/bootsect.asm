@@ -1,5 +1,5 @@
 ; Isotope OS - Open Source Operating System
-; Copyright (C) 2026-present Viktor Popp
+; Copyright (C) 2026 Viktor Popp
 ;
 ; This program is free software: you can redistribute it and/or modify
 ; it under the terms of the GNU General Public License as published by
@@ -26,6 +26,7 @@ STAGE2_LOAD_OFFSET  equ 0x7C00
 section .bpb
 
 SECTOR_SIZE         equ 512
+SECTORS_PER_CLUSTER equ 1
 RESERVED_SECTORS    equ 1
 FAT_COUNT           equ 2
 ROOT_ENTRIES        equ 0xE0
@@ -33,9 +34,10 @@ SECTORS_PER_FAT     equ 9
 SECTORS_PER_TRACK   equ 18
 HEAD_COUNT          equ 2
 
-FAT_REGION_SIZE         equ RESERVED_SECTORS + (FAT_COPY_COUNT * SECTORS_PER_FAT)
-ROOT_DIR_LBA  equ FAT_COUNT * SECTORS_PER_FAT + RESERVED_SECTORS
-ROOT_DIR_SIZE equ (ROOT_ENTRIES * 32) / SECTOR_SIZE
+FAT_REGION_SIZE     equ FAT_COUNT * SECTORS_PER_FAT
+ROOT_DIR_LBA        equ FAT_REGION_SIZE + RESERVED_SECTORS
+ROOT_DIR_SIZE       equ (ROOT_ENTRIES * 32) / SECTOR_SIZE                                   ; in sectors
+DATA_REGION_LBA     equ RESERVED_SECTORS + (FAT_COUNT * SECTORS_PER_FAT) + ROOT_DIR_SIZE
 
 jmp short _start
 nop
@@ -43,7 +45,7 @@ nop
 bpb:
 .oem_id:                db "ISOTOPE "               ; 8 bytes        
 .sector_size:           dw SECTOR_SIZE
-.sectors_per_cluster:   db 1
+.sectors_per_cluster:   db SECTORS_PER_CLUSTER
 .reserved_sectors:      dw RESERVED_SECTORS
 .fat_count:             db FAT_COUNT
 .root_entries:          dw ROOT_ENTRIES
@@ -155,7 +157,67 @@ _continue:
 .load_stage2_loop:
     mov ax, [stage2_cluster]
 
+    ; right now we onlt have the cluster within the data region itself
+    ;
+    ; we now convert it to the correct LBA
+
+    sub ax, 2                       ; the first 2 clusters are reserved
+    mov cx, SECTORS_PER_CLUSTER
+    mul cx                          ; AX *= sectors per cluster
+    add ax, DATA_REGION_LBA         ; start LBA (sector) of the data region
+
+
+    mov cl, 1
+    mov dl, [ebr.drive_number]
+    call floppy_read
+
+    add bx, [bpb.sector_size]       ; move the stage 2 load offset
+
+    ; find the next cluster number
+    mov ax, [stage2_cluster]
+    mov cx, 3
+    mul cx
+    dec cx
+    div cx
+
+    ; AX is now AX * 3 / 2
+    ; if the cluster is odd we use the high 12 bits of the word
+    ; if the cluster is even we use the lower 12 bits of the word
+
+    mov si, buffer
+    add si, ax
+    mov ax, [ds:si]     ; read the cluster numbar from the FAT
+
+    or dx, dx
+    jz .even
+
+.odd:   
+    shr ax, 4
+    jmp .next_cluster
+
+.even:
+    and ax, 0x0FFF
+
+.next_cluster:
+    cmp ax, 0x0FF8
+    jae .read_finish
+
+    mov [stage2_cluster], ax
+    jmp .load_stage2_loop
+
+.read_finish:
+    mov dl, [ebr.drive_number]
+
+    mov ax, STAGE2_LOAD_SEGMENT
+    mov ds, ax
+    mov es, ax
+
+    jmp STAGE2_LOAD_SEGMENT:STAGE2_LOAD_OFFSET
+
+    jmp wait_key_and_reboot
+
 halt:
+    cli
     hlt
     jmp halt
 
@@ -316,7 +378,7 @@ wait_key_and_reboot:
 section .rodata
 
 msg_loading: db "Loading...", ENDL, 0
-msg_floppy_error: db "Floppy error...", 0
+msg_floppy_error: db "Floppy error!", 0
 msg_stage2_not_found: db "Couldn't find STAGE2.BIN", 0
 stage2_pathname: db 'STAGE2  BIN'
 
