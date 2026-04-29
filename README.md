@@ -28,7 +28,7 @@ make all run
 
 ## License
 
-Zinix is licensed under the GNU GPL v3.0 License. See [COPYING] for more details.
+Isotope OS is licensed under the GNU GPL v3.0 License. See [COPYING] for more details.
 
 Copyright © 2026 Viktor Popp
 
