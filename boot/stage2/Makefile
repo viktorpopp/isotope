@@ -1,9 +1,9 @@
 # TODO: make this look better
 
 SRCS := entry.asm main.c term.c
-OBJS := $(patsubst %.c,$(BUILD_DIR)/%.c.o,$(filter %.c,$(SRCS))) \
-        $(patsubst %.asm,$(BUILD_DIR)/%.asm.o,$(filter %.asm,$(SRCS)))
-DEP := $(patsubst %.c,$(BUILD_DIR)/%.c.d,$(filter %.c,$(SRCS)))
+OBJS := $(patsubst %.c,$(BUILD_DIR)/boot/%.c.o,$(filter %.c,$(SRCS))) \
+        $(patsubst %.asm,$(BUILD_DIR)/boot/%.asm.o,$(filter %.asm,$(SRCS)))
+DEP := $(patsubst %.c,$(BUILD_DIR)/boot/%.c.d,$(filter %.c,$(SRCS)))
 
 LIBGCC ?= $(shell $(CC) $(CFLAGS) -m32 -print-libgcc-file-name)
 

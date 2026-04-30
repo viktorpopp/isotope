@@ -96,23 +96,6 @@ _continue:
     mov si, msg_loading
     call puts
 
-    ; read the drive parameters
-    push es         ; the function may modify ES, but we still want it to be zero
-    mov ah, 0x08    ; read drive parameters
-    int 0x13        ; disk services interrupt
-    jc floppy_error
-    pop es
-
-    ; CL [0-5] - sectors per track
-    ; DH       - head count - 1
-
-    and cl, 0b00111111              ; isolate the bits we need
-    xor ch, ch                      ; the rest CX includes other things we don't care about
-    mov [bpb.sectors_per_track], cx
-
-    inc dh
-    mov [bpb.head_count], dh
-
     ; read the root directory
     mov cl, ROOT_DIR_SIZE           ; sectors to read
     mov ax, ROOT_DIR_LBA            ; LBA of root directory
@@ -166,7 +149,6 @@ _continue:
     mul cx                          ; AX *= sectors per cluster
     add ax, DATA_REGION_LBA         ; start LBA (sector) of the data region
 
-
     mov cl, 1
     mov dl, [ebr.drive_number]
     call floppy_read
@@ -177,7 +159,7 @@ _continue:
     mov ax, [stage2_cluster]
     mov cx, 3
     mul cx
-    dec cx
+    mov cx, 2
     div cx
 
     ; AX is now AX * 3 / 2
