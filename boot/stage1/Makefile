@@ -2,9 +2,9 @@
 
 $(BUILD_DIR)/boot/stage1.bin: $(BUILD_DIR)/boot/stage1.o
 	@printf "  LD $@\n"
-	@$(LD) -m elf_i386 -T linker.ld $^ -o $@
+	@$(LD) -m elf_i386 -T linker.ld -Map=$(BUILD_DIR)/boot/stage1.map $^ -o $@
 
 $(BUILD_DIR)/boot/stage1.o: bootsect.asm
 	@printf "  AS $@\n"
 	@mkdir -p $(@D)
-	@$(ASM) -f elf $^ -o $@
+	@$(ASM) -f elf -g $^ -o $@

@@ -22,14 +22,16 @@ SECTIONS
         *(.text)
         *(.rodata)
         *(.data)
+        __data_end = . ;
     }
 
     /*
      * Place the .bss after .text in the VMA, but don't occupy any space in the LMA
      * We don't need to define symbols because in the bootsector we dont expect anything to be null terminated
      */
-    .bss : {
+    .bss : AT(__data_end) {
         *(.bss)
+        __bss_end = .;
     }
 
     /* Tells the BIOS that we are bootable */

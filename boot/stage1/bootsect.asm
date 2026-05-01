@@ -36,7 +36,7 @@ HEAD_COUNT          equ 2
 
 FAT_REGION_SIZE     equ FAT_COUNT * SECTORS_PER_FAT
 ROOT_DIR_LBA        equ FAT_REGION_SIZE + RESERVED_SECTORS
-ROOT_DIR_SIZE       equ (ROOT_ENTRIES * 32) / SECTOR_SIZE                                   ; in sectors
+ROOT_DIR_SIZE       equ (ROOT_ENTRIES * 32 + (SECTOR_SIZE - 1)) / SECTOR_SIZE               ; in sectors
 DATA_REGION_LBA     equ RESERVED_SECTORS + (FAT_COUNT * SECTORS_PER_FAT) + ROOT_DIR_SIZE
 
 jmp short _start
@@ -144,10 +144,12 @@ _continue:
     ;
     ; we now convert it to the correct LBA
 
-    sub ax, 2                       ; the first 2 clusters are reserved
-    mov cx, SECTORS_PER_CLUSTER
-    mul cx                          ; AX *= sectors per cluster
-    add ax, DATA_REGION_LBA         ; start LBA (sector) of the data region
+    ;sub ax, 2                       ; the first 2 clusters are reserved
+    ;mov cx, SECTORS_PER_CLUSTER
+    ;mul cx                          ; AX *= sectors per cluster
+    ;add ax, DATA_REGION_LBA         ; start LBA (sector) of the data region
+
+    add ax, 31
 
     mov cl, 1
     mov dl, [ebr.drive_number]
@@ -168,7 +170,7 @@ _continue:
 
     mov si, buffer
     add si, ax
-    mov ax, [ds:si]     ; read the cluster numbar from the FAT
+    mov ax, [ds:si]     ; read the cluster number from the FAT
 
     or dx, dx
     jz .even
@@ -178,10 +180,10 @@ _continue:
     jmp .next_cluster
 
 .even:
-    and ax, 0x0FFF
+    and ax, 0xFFF
 
 .next_cluster:
-    cmp ax, 0x0FF8
+    cmp ax, 0xFF8
     jae .read_finish
 
     mov [stage2_cluster], ax
