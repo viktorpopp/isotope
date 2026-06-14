@@ -1,12 +1,12 @@
 use anyhow::Context;
-use axum::{Router, routing::get};
+use axum::Router;
 use tokio::net::TcpListener;
 
-mod well_known;
+mod router;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let router = Router::new().route("/.well-known/isotope/support", get(well_known::support));
+    let router = Router::new().merge(router::routes());
     let listener = TcpListener::bind("0.0.0.0:8009")
         .await
         .context("could not bind to port 8009/tcp")?;

@@ -1,4 +1,4 @@
-use axum::Json;
+use axum::{Json, Router, routing::get};
 use serde_json::{Value, json};
 
 pub async fn support() -> Json<Value> {
@@ -10,4 +10,8 @@ pub async fn support() -> Json<Value> {
             }
         ]
     }))
+}
+
+pub fn routes() -> Router {
+    Router::new().route("/isotope/support", get(support))
 }
